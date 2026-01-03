@@ -3,6 +3,7 @@
 ⚠️ Under development ⚠️
 
 ## Purpose
+HapPy SNPs is a batch of Python scripts in a pipeline designed to process plant target capture sequencing data to extract phased microhaplotypes for downstream population genetic analyses. It integrates preparation steps such as assembly, variant calling, and phasing with custom imputation and microhaplotype summarization to generate high‑quality microhaplotype datasets from targeted nuclear gene regions, specifically [Angiosperms353](https://academic.oup.com/sysbio/article/68/4/594/5237557).
 
 ## Initial File Preparation
 ### Software
