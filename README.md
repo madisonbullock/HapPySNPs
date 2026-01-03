@@ -66,7 +66,7 @@ The code above, in particular, keeps SNPs that are called in ≥80% of samples, 
 ### Variant Phasing
 WhatsHap is used to perform read-backed phasing of variants in the filtered VCF file using aligned reads from the BAM files and the pseudo-reference file, subsequently outputting a phased VCF that will be the input to the HapPySNPs workflow. WhatsHap was specifically chosen as it can leverage paired-end reads spanning multiple variants to infer haplotypes, and read-backed phasing is often more accurate than statistical phasing for small sample sizes or diverse populations.
 ```bash
-whatshap phase -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.imputed.phased.vcf --reference pseudo_reference.fasta variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.imputed.vcf /path/to/BAM/files/*.markedDups.bam
+whatshap phase -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.vcf --reference pseudo_reference.fasta variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.vcf /path/to/BAM/files/*.markedDups.bam
 ```
 
 ## Workflow
@@ -77,8 +77,124 @@ whatshap phase -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36
   - scikit-learn: https://scikit-learn.org/stable/
   - pysam: https://pysam.readthedocs.io/en/stable/
 
-### Variant Imputation
+### 0. Variant Imputation (Optional) - impute_missing_phased_snps.py
+This script will:
+- Read a phased VCF file with missing genotypes
+- Fill in missing genotypes using KNN or mode imputation
+- Keep the phasing information intact
+- Remove low-confidence variants when using KNN imputation
+- Remove variants that still have missing data after imputation
+- Save a new VCF file with imputed genotypes
+- Create logs summarizing the imputation results
 
+Usage:
+```bash
+python impute_missing_phased_snps.py -i variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.vcf -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.imputed.vcf -l imputation_summary.log -d imputation_detailed.log --knn -c 0.9
+```
 
+Output:
+- Imputed phased VCF file
+- Summary log with missing data and filtering info
+- Detailed log of each imputed genotype with confidence scores
 
+### 1. Determine Phase Blocks - determine_phase_blocks.py
+This script will:
+- Read a phased VCF file
+- Find blocks where the genotype phase is consistent
+- Create a GTF file listing these phase blocks with their positions
 
+Usage:
+```bash
+python determine_phase_blocks.py -i variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.imputed.vcf -o output_phase_blocks.gtf
+```
+
+Output:
+- GTF file listing detected phase blocks
+
+### 2. Extract Microhaplotype SNPs - extract_microhap_SNPs.py
+This script will:
+- Read a phased VCF, BAM file list, phase block GTF, and imputation log
+- Extract genotypes and count allele-supporting reads per sample
+- Mark which genotypes were imputed and assign default values for them
+- Output a CSV summarizing genotype, read counts, phasing blocks, and imputation status
+
+Usage:
+```bash
+python extract_microhap_SNPs.py -v variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.imputed.vcf -b bam_list.txt -g output_phase_blocks.gtf -i imputation_detailed.log -o microhap_snps.csv
+```
+
+Output:
+- CSV file containing microhaplotype SNP data per sample, including genotype, allele counts, allele balance, phase block IDs, and imputation status
+
+### 3. Assemble Microhaplotypes - assemble_microhaplotypes.py
+This script will:
+- Read a CSV file with phased microhaplotype SNP data per sample and variant
+= Group variants by gene, sample, and haplotype block
+- Combine phased SNP alleles into continuous microhaplotype sequences
+- Calculate average read counts and depths per SNP for each haplotype
+- Filter out single-SNP haplotypes to keep only multi-SNP microhaplotypes
+- Save the combined microhaplotype information with summary stats to a new CSV file
+
+Usage:
+```bash
+python assemble_microhaplotypes.py -i microhap_snps.csv -o combined_microhaps.csv
+```
+
+Output:
+- CSV file summarizing combined microhaplotypes per gene, sample, and block, including haplotype sequences, SNP positions, block length, and read depth averages
+
+### 4. Calculate Selection Criteria - calculate_selection_criteria.py
+This script will:
+- Read a CSV file with combined microhaplotype data per gene and block
+- Calculate and summarize block-level statistics, including:
+  - Heterozygosity
+  - Effective allele number (Ae)
+  - Rosenberg’s Informativeness Index (In)
+  - Average haplotype block length
+- Compare blocks across metrics to assess concordance
+- Output a CSV file with gene-level summary statistics
+
+Usage:
+```bash
+python calculate_selection_criteria.py -i combined_microhaps.csv -o selection_criteria_summary.csv
+```
+
+Output:
+- CSV file summarizing diversity and informativeness statistics per gene and haplotype block
+
+### 5. Select Microhaplotypes - select_microhaplotypes.py
+This script will:
+- Read combined gene-block statistics from a CSV file
+- Select blocks based on one chosen metric:
+  - Highest heterozygosity
+  - Highest effective allele number (Ae)
+  - Highest Rosenberg’s Informativeness index (In)
+  - Highest average haplotype block length
+- Read microhaplotype genotype data per sample from a CSV file and filter microhaplotypes to keep only those matching the selected blocks per gene
+- Output a filtered CSV file with the selected microhaplotypes
+
+Usage:
+```bash
+python select_microhaplotypes.py -I -c selection_criteria_summary.csv -m combined_microhaps.csv -o selected_microhaps.csv
+```
+*Replace -I with one of -A (Highest effective allele number), -L (Highest average haplotype block length), or -H (Highest heterozygosity) to select a different filter*
+
+Output:
+- Filtered microhaplotype CSV file containing only microhaplotypes from the selected blocks based on the specified metric
+
+### 6. Assign Allele IDs - assign_allele_IDs.py
+This script will:
+- Read a CSV file with filtered microhaplotypes per gene, sample, and block
+- Assign unique numeric allele IDs to each distinct microhaplotype sequence per gene and block, similar to what is used with microsatellites
+- Add these numeric allele IDs as new columns for each microhaplotype in the CSV
+- Create a dictionary CSV mapping genes, blocks, microhaplotype sequences, and their assigned allele IDs
+- Save the updated microhaplotype data with allele IDs and the dictionary file
+
+Usage:
+```bash
+python assign_allele_IDs.py -i selected_microhaps.csv -o selected_microhaps_with_alleleIDs.csv -d allele_dictionary.csv
+```
+
+Output:
+- CSV file with microhaplotypes and their assigned numeric allele IDs per haplotype
+- CSV dictionary mapping genes, blocks, microhaplotype sequences, and allele IDs
