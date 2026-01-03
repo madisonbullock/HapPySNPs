@@ -49,9 +49,9 @@ Next, this protocol utilizes a BAM file generation script adapted from the [HybS
 Usage for single samples: `bash variantcall_HapPySNP.sh pseudo_reference.fasta SampleID`
 Usage for multiple samples: 
 ```bash
-while read name
+while read sample
 do
-bash variantcall_HapPySNP.sh pseudo_reference.fasta $name
+bash variantcall_HapPySNP.sh pseudo_reference.fasta $sample
 done < samples.txt
 ```
 
