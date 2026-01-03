@@ -44,14 +44,14 @@ samtools index pseudo_reference.fasta
 ```
 
 ### Variant Calling
-Next, this protocol utilizes a BAM file generation script adapted from the [HybSep-SNP-Extraction](https://github.com/lindsawi/HybSeq-SNP-Extraction) script `variantcall.sh`. The adapted script is called `variantcall_HapPySNP.sh`. This script will map paired-end reads to supercontigs, replace read groups for mapped BAM files, mark duplicate reads, and remove intermediate BAM files.
+Next, this protocol utilizes a BAM file generation script adapted from the [HybSep-SNP-Extraction](https://github.com/lindsawi/HybSeq-SNP-Extraction) script `variantcall.sh`. The adapted script is called `BAM_generation.sh`. This script will map paired-end reads to supercontigs, replace read groups for mapped BAM files, mark duplicate reads, and remove intermediate BAM files.
 
-Usage for single samples: `bash variantcall_HapPySNP.sh pseudo_reference.fasta SampleID`
+Usage for single samples: `bash BAM_generation.sh pseudo_reference.fasta SampleID`
 Usage for multiple samples: 
 ```bash
 while read sample
 do
-bash variantcall_HapPySNP.sh pseudo_reference.fasta $sample
+bash BAM_generation.sh pseudo_reference.fasta $sample
 done < samples.txt
 ```
 
