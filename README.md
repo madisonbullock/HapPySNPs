@@ -45,14 +45,28 @@ samtools index pseudo_reference.fasta
 
 ### Variant Calling
 Next, this protocol utilizes a BAM file generation script adapted from the [HybSep-SNP-Extraction](https://github.com/lindsawi/HybSeq-SNP-Extraction) script `variantcall.sh`. The adapted script is called `BAM_generation.sh`. This script will map paired-end reads to supercontigs, replace read groups for mapped BAM files, mark duplicate reads, and remove intermediate BAM files.
-
-Usage for single samples: `bash BAM_generation.sh pseudo_reference.fasta SampleID`
-Usage for multiple samples: 
+- Usage for single samples: `bash BAM_generation.sh pseudo_reference.fasta SampleID`
+- Usage for multiple samples: 
 ```bash
 while read sample
 do
 bash BAM_generation.sh pseudo_reference.fasta $sample
 done < samples.txt
+```
+To efficiently generate a variant file, run FreeBayes in parallel to call simple SNPs and indels from a list of BAM file paths (`bam_list.txt`) against the taxon-specific pseudo-reference file. This process splits the genome into 250 bp chunks, ignores complex variants and priors, saves results to a VCF file, and logs any errors:
+```bash
+nohup freebayes-parallel <(fasta_generate_regions.py pseudo_reference.fasta.fai 250) 10 -f pseudo_reference.fasta -L bam_list.txt --haplotype-length 0 -kwVaXi > variants.markedDups.noMNP.noComplex.noPriors.vcf 2> freebayes_errors.log
+```
+Filter the VCF output from FreeBayes using VCFtools:
+```bash
+vcftools --gzvcf variants.markedDups.noMNP.noComplex.noPriors.vcf --max-missing 0.8 --remove-indels --minQ 36 --minDP 6 --recode --out variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6
+```
+The code above, in particular, keeps SNPs that are called in ≥80% of samples, have a minimum quality greater than or equal to 36, have a coverage depth of greater than or equal to 6 reads, and are not indels. These filters can be changed depending on the researcher's preference. However, in preliminary analysis using the HapPySNPs optional imputation script, we found that decreasing `--max-missing` below 0.8 does not substantially increase the total number of SNPs retained. If the imputation script is not used, `--max-missing` must be set to `1.0`.
+
+### Variant Phasing
+WhatsHap is used to perform read-backed phasing of variants in the filtered VCF file using aligned reads from the BAM files and the pseudo-reference file, subsequently outputting a phased VCF that will be the input to the HapPySNPs workflow. WhatsHap was specifically chosen as it can leverage paired-end reads spanning multiple variants to infer haplotypes, and read-backed phasing is often more accurate than statistical phasing for small sample sizes or diverse populations.
+```bash
+whatshap phase -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.imputed.phased.vcf --reference pseudo_reference.fasta variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.imputed.vcf /path/to/BAM/files/*.markedDups.bam
 ```
 
 ## Workflow
@@ -62,5 +76,9 @@ done < samples.txt
   - numpy: https://numpy.org/
   - scikit-learn: https://scikit-learn.org/stable/
   - pysam: https://pysam.readthedocs.io/en/stable/
+
+### Variant Imputation
+
+
 
 
