@@ -25,7 +25,7 @@ def encode_genotypes(df):
         '0/1': 1, '1/0': 1, '0|1': 1, '1|0': 1,
         '1/1': 2, '1|1': 2
     }
-    numeric = df.applymap(lambda g: mapping.get(extract_genotype_only(g), np.nan))
+    numeric = df.map(lambda g: mapping.get(extract_genotype_only(g), np.nan))
     return numeric
 
 def most_common_phased_het(genotypes):
