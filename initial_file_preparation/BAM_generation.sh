@@ -18,8 +18,8 @@ gatk FastqToSam -F1 $read1fn -F2 $read2fn -O $prefix.unmapped.bam -SM $prefix.so
 gatk AddOrReplaceReadGroups -I  $prefix.sorted.bam -O $prefix.sorted-RG.bam -RGID $prefix -RGLB lib1 -RGPL illumina -RGPU unit1 -RGSM $prefix
 
 #Mark duplicate sequences
-gatk MarkDuplicates -I $prefix.sorted-RG.bam -O $prefix.markedDups.bam -M $prefix.metrics.txt
-samtools index $prefix.markedDups.bam
+gatk MarkDuplicates -I $prefix.sorted-RG.bam -O $prefix.marked.noDups.bam -M $prefix.metrics.txt --REMOVE_DUPLICATES true
+samtools index $prefix.marked.noDups.bam
 
 #Remove intermediate files, more intermediate files can be added if prefered
 rm $prefix.unmapped.bam $prefix.unmapped-RG.bam
