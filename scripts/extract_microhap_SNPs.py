@@ -7,10 +7,16 @@ import os
 import subprocess
 from collections import defaultdict
 
+# -----------------------------
+# Argument Parsing
+# -----------------------------
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Extract microhaplotype SNPs from VCF and BAMs with imputation awareness.")
+    parser = argparse.ArgumentParser(
+        description="Extract microhaplotype SNPs from VCF and BAMs with imputation awareness."
+    )
     parser.add_argument("-v", "--vcf", required=True, help="Input phased VCF file (can be uncompressed or bgzipped)")
-    parser.add_argument("-b", "--bam_list", required=True, help="BAM input file list: either CSV (Sample,BAM) or plain list of BAM paths")
+    parser.add_argument("-b", "--bam_list", required=True, help="BAM input file list: CSV (Sample,BAM) or plain list of BAM paths")
     parser.add_argument("-g", "--gtf", required=True, help="GTF file containing block_id annotations")
     parser.add_argument("-i", "--imputation_log", required=True, help="CSV log of imputed genotypes")
     parser.add_argument("-o", "--output", required=True, help="Output CSV file")
@@ -18,6 +24,10 @@ def parse_args():
     parser.add_argument("--bam_list_is_csv", action="store_true",
                         help="Specify if BAM list (-b) is a CSV with Sample,BAM columns. If not set, assumes plain BAM path list with sampleID extracted from filename.")
     return parser.parse_args()
+
+# -----------------------------
+# VCF Compression / Indexing
+# -----------------------------
 
 def bgzip_and_index(vcf_path):
     """Compress and index a VCF if not already compressed."""
@@ -34,6 +44,10 @@ def bgzip_and_index(vcf_path):
             print(f"Index not found. Indexing {vcf_path} ...")
             subprocess.run(["tabix", "-p", "vcf", vcf_path], check=True)
         return vcf_path
+
+# -----------------------------
+# GTF / Phase Block Parsing
+# -----------------------------
 
 def load_blocks_from_gtf(gtf_file):
     blocks = defaultdict(list)
@@ -54,6 +68,10 @@ def load_blocks_from_gtf(gtf_file):
             pos_to_block[(chrom, pos)] = block_id
     return pos_to_block
 
+# -----------------------------
+# Imputation Log Parsing
+# -----------------------------
+
 def load_imputed_positions(log_file):
     imputed = set()
     with open(log_file) as f:
@@ -70,16 +88,17 @@ def load_imputed_positions(log_file):
                 imputed.add((sample, chrom, pos))
     return imputed
 
+# -----------------------------
+# BAM Paths Loading
+# -----------------------------
+
 def load_bam_paths_from_csv(csv_file):
     bam_paths = {}
     with open(csv_file) as f:
         reader = csv.reader(f)
         header = next(reader)
-        sample_col = 0
-        bam_col = 1
-        if "Sample" in header and "BAM" in header:
-            sample_col = header.index("Sample")
-            bam_col = header.index("BAM")
+        sample_col = header.index("Sample") if "Sample" in header else 0
+        bam_col = header.index("BAM") if "BAM" in header else 1
         for row in reader:
             if len(row) < 2:
                 continue
@@ -99,6 +118,39 @@ def load_bam_paths_from_list(bam_list_file):
             bam_paths[sample_id] = bam_path
     return bam_paths
 
+# -----------------------------
+# Flexible VCF sample -> BAM matching
+# -----------------------------
+
+def match_vcf_samples_to_bams(vcf_samples, bam_paths):
+    """Match VCF sample names to BAM paths robustly."""
+    sample_to_bam = {}
+    for sample in vcf_samples:
+        # Direct match
+        if sample in bam_paths:
+            sample_to_bam[sample] = bam_paths[sample]
+            continue
+
+        # Match ignoring case
+        for s, bam in bam_paths.items():
+            if s.lower() == sample.lower():
+                sample_to_bam[sample] = bam
+                break
+        else:
+            # Match by partial name (sample appears in BAM filename)
+            for s, bam in bam_paths.items():
+                if sample in s or s in sample:
+                    sample_to_bam[sample] = bam
+                    break
+
+        if sample not in sample_to_bam:
+            print(f"⚠️ Warning: No BAM found for sample '{sample}'")
+    return sample_to_bam
+
+# -----------------------------
+# VCF Allele Extraction
+# -----------------------------
+
 def fetch_alleles(vcf, record, sample):
     gt = record.samples[sample].get("GT")
     if gt is None or "." in str(gt):
@@ -106,6 +158,10 @@ def fetch_alleles(vcf, record, sample):
     alleles = [record.alleles[i] if i < len(record.alleles) else "N" for i in gt]
     genotype_str = "|".join(map(str, gt))
     return alleles[0], alleles[1], genotype_str
+
+# -----------------------------
+# BAM Allele Counting
+# -----------------------------
 
 def count_reads(bam_path, chrom, pos, alleles):
     samfile = pysam.AlignmentFile(bam_path, "rb")
@@ -122,17 +178,30 @@ def count_reads(bam_path, chrom, pos, alleles):
     samfile.close()
     return allele_counts
 
+# -----------------------------
+# Main Execution
+# -----------------------------
+
 def main():
     args = parse_args()
     vcf_path = bgzip_and_index(args.vcf)
     vcf = pysam.VariantFile(vcf_path)
+
     pos_to_block = load_blocks_from_gtf(args.gtf)
     imputed = load_imputed_positions(args.imputation_log)
 
+    # Load BAMs and match to VCF samples
     if args.bam_list_is_csv:
-        bam_paths = load_bam_paths_from_csv(args.bam_list)
+        bam_paths_raw = load_bam_paths_from_csv(args.bam_list)
     else:
-        bam_paths = load_bam_paths_from_list(args.bam_list)
+        bam_paths_raw = load_bam_paths_from_list(args.bam_list)
+
+    bam_paths = match_vcf_samples_to_bams(vcf.header.samples, bam_paths_raw)
+
+    # Debug prints
+    print("VCF samples:", list(vcf.header.samples))
+    print("Matched BAMs:", list(bam_paths.keys()))
+    print(f"Total imputed positions loaded: {len(imputed)}")
 
     with open(args.output, "w", newline="") as out_f:
         writer = csv.writer(out_f)
