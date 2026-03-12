@@ -121,7 +121,7 @@ This script will:
 
 Usage:
 ```bash
-python extract_microhap_SNPs.py -v variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.imputed.vcf -b bam_list.txt -g output_phase_blocks.gtf -i imputation_detailed.log -o microhap_snps.csv
+python extract_microhap_SNPs.py -v variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.imputed.vcf -b bam_list.txt -g output_phase_blocks.gtf -i imputation_detailed_log.csv -o microhap_snps.csv -d 6 --bam_list_is_csv
 ```
 
 Output:
