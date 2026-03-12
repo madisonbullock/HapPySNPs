@@ -7,10 +7,6 @@ import os
 import subprocess
 from collections import defaultdict
 
-# -----------------------------
-# Argument Parsing
-# -----------------------------
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Extract microhaplotype SNPs from VCF and BAMs with imputation awareness."
@@ -25,11 +21,7 @@ def parse_args():
                         help="Specify if BAM list (-b) is a CSV with Sample,BAM columns. If not set, assumes plain BAM path list with sampleID extracted from filename.")
     return parser.parse_args()
 
-# -----------------------------
-# VCF Compression / Indexing
-# -----------------------------
-
-def bgzip_and_index(vcf_path):
+def bgzip_and_index(vcf_path): # compress vcf
     """Compress and index a VCF if not already compressed."""
     if not vcf_path.endswith(".gz"):
         print(f"Compressing and indexing {vcf_path} ...")
@@ -45,11 +37,7 @@ def bgzip_and_index(vcf_path):
             subprocess.run(["tabix", "-p", "vcf", vcf_path], check=True)
         return vcf_path
 
-# -----------------------------
-# GTF / Phase Block Parsing
-# -----------------------------
-
-def load_blocks_from_gtf(gtf_file):
+def load_blocks_from_gtf(gtf_file): # use GTF block file to identify blocks in sequences
     blocks = defaultdict(list)
     with open(gtf_file) as f:
         for line in f:
@@ -68,11 +56,7 @@ def load_blocks_from_gtf(gtf_file):
             pos_to_block[(chrom, pos)] = block_id
     return pos_to_block
 
-# -----------------------------
-# Imputation Log Parsing
-# -----------------------------
-
-def load_imputed_positions(log_file):
+def load_imputed_positions(log_file): # load imputation log to determine which SNPs were imputed
     imputed = set()
     with open(log_file) as f:
         reader = csv.DictReader(f)
@@ -88,11 +72,7 @@ def load_imputed_positions(log_file):
                 imputed.add((sample, chrom, pos))
     return imputed
 
-# -----------------------------
-# BAM Paths Loading
-# -----------------------------
-
-def load_bam_paths_from_csv(csv_file):
+def load_bam_paths_from_csv(csv_file): # load in BAM file paths
     bam_paths = {}
     with open(csv_file) as f:
         reader = csv.reader(f)
@@ -118,11 +98,7 @@ def load_bam_paths_from_list(bam_list_file):
             bam_paths[sample_id] = bam_path
     return bam_paths
 
-# -----------------------------
-# Flexible VCF sample -> BAM matching
-# -----------------------------
-
-def match_vcf_samples_to_bams(vcf_samples, bam_paths):
+def match_vcf_samples_to_bams(vcf_samples, bam_paths): # flexible matching of BAM files to VCF
     """Match VCF sample names to BAM paths robustly."""
     sample_to_bam = {}
     for sample in vcf_samples:
@@ -147,11 +123,7 @@ def match_vcf_samples_to_bams(vcf_samples, bam_paths):
             print(f"⚠️ Warning: No BAM found for sample '{sample}'")
     return sample_to_bam
 
-# -----------------------------
-# VCF Allele Extraction
-# -----------------------------
-
-def fetch_alleles(vcf, record, sample):
+def fetch_alleles(vcf, record, sample): # extract alelles per individual
     gt = record.samples[sample].get("GT")
     if gt is None or "." in str(gt):
         return None, None, "./."
@@ -159,11 +131,7 @@ def fetch_alleles(vcf, record, sample):
     genotype_str = "|".join(map(str, gt))
     return alleles[0], alleles[1], genotype_str
 
-# -----------------------------
-# BAM Allele Counting
-# -----------------------------
-
-def count_reads(bam_path, chrom, pos, alleles):
+def count_reads(bam_path, chrom, pos, alleles): # count number of reads per allele
     samfile = pysam.AlignmentFile(bam_path, "rb")
     allele_counts = {alleles[0]: 0, alleles[1]: 0}
     for pileupcolumn in samfile.pileup(chrom, pos - 1, pos, truncate=True):
@@ -178,11 +146,7 @@ def count_reads(bam_path, chrom, pos, alleles):
     samfile.close()
     return allele_counts
 
-# -----------------------------
-# Main Execution
-# -----------------------------
-
-def main():
+def main(): # execute
     args = parse_args()
     vcf_path = bgzip_and_index(args.vcf)
     vcf = pysam.VariantFile(vcf_path)
