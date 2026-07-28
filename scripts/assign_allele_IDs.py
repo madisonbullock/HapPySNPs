@@ -40,23 +40,17 @@ def assign_allele_ids(input_file, output_file, dictionary_file):
         sys.exit(1)
 
     print("DEBUG: Extracting unique alleles for ID assignment...")
-    
-    # Dictionary to store unique allele IDs per gene and block
+
+    # Unique allele IDs, scoped per gene
     allele_dict = {}
     dictionary_data = []
 
-    # Generate unique numeric allele IDs per gene and block
-    for _, row in df.iterrows():
-        gene = row['Gene']
-        block = row['Haplotype_Block']
-        microhap_1 = row['Microhaplotype_1']
-        microhap_2 = row['Microhaplotype_2']
+    for row in df.itertuples(index=False):
+        gene = row.Gene
+        block = row.Haplotype_Block
+        microhap_1 = row.Microhaplotype_1
+        microhap_2 = row.Microhaplotype_2
 
-        # Extract numeric gene ID and block ID
-        gene_id = extract_gene_id(gene)
-        block_id = extract_block_id(block)
-
-        # Initialize allele counter for each gene if not already initialized
         if gene not in allele_dict:
             allele_dict[gene] = {}
 
@@ -70,9 +64,12 @@ def assign_allele_ids(input_file, output_file, dictionary_file):
 
     print(f"DEBUG: Assigned {sum(len(d) for d in allele_dict.values())} unique allele IDs.")
 
-    # Add allele ID columns to the original dataframe based on the new numeric IDs with padding
-    df['allele_ID_1'] = df.apply(lambda row: str(allele_dict[row['Gene']][row['Microhaplotype_1']]).zfill(3), axis=1)
-    df['allele_ID_2'] = df.apply(lambda row: str(allele_dict[row['Gene']][row['Microhaplotype_2']]).zfill(3), axis=1)
+    # flatten to a (gene, microhap) -> padded ID lookup for building the two ID columns
+    lookup = {(g, m): str(aid).zfill(3)
+              for g, gene_dict in allele_dict.items()
+              for m, aid in gene_dict.items()}
+    df['allele_ID_1'] = [lookup[(g, m)] for g, m in zip(df['Gene'], df['Microhaplotype_1'])]
+    df['allele_ID_2'] = [lookup[(g, m)] for g, m in zip(df['Gene'], df['Microhaplotype_2'])]
 
     print(f"DEBUG: Saving final output to {output_file}")
     df.to_csv(output_file, index=False)

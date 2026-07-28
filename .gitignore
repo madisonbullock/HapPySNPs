@@ -1,0 +1,25 @@
+
+# --- ignore everything at the repo root ---
+/*
+
+# --- root-level files to publish ---
+!/.gitignore
+!/LICENSE
+!/README.md
+
+# --- scripts/ ---
+!/scripts/
+/scripts/*
+!/scripts/assemble_microhaplotypes.py
+!/scripts/assign_allele_IDs.py
+!/scripts/calculate_selection_criteria.py
+!/scripts/determine_phase_blocks.py
+!/scripts/extract_microhap_SNPs.py
+!/scripts/impute_missing_phased_snps.py
+!/scripts/select_microhaplotypes.py
+
+# --- initial_file_preparation/ ---
+!/initial_file_preparation/
+/initial_file_preparation/*
+!/initial_file_preparation/BAM_generation.sh
+!/initial_file_preparation/persample_pergene_recoverystats.R

@@ -23,6 +23,14 @@ def detect_phase_blocks(vcf_filename, output_filename):
 
     vcf_reader = pysam.VariantFile(vcf_filename)
 
+    # blocks are called off the first sample in the header
+    header_samples = list(vcf_reader.header.samples)
+    if not header_samples:
+        write_gtf([], output_filename)
+        print(f"✅ GTF file successfully written: {output_filename}")
+        return
+    first_sample = header_samples[0]
+
     blocks = []
     block_id = 1
     last_phase = None
@@ -34,8 +42,7 @@ def detect_phase_blocks(vcf_filename, output_filename):
         if not record.samples:
             continue
 
-        sample = list(record.samples.keys())[0]
-        phase = record.samples[sample].get("GT")
+        phase = record.samples[first_sample].get("GT")
 
         if phase is None:
             continue

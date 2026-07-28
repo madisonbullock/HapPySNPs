@@ -1,20 +1,27 @@
 import pandas as pd
 import numpy as np
-from sklearn.impute import KNNImputer, SimpleImputer
+from sklearn.impute import SimpleImputer
 import argparse
 from io import StringIO
 from collections import Counter
-from scipy.stats import mode
+#from scipy.stats import mode
 
-def read_vcf(file_path):
-    with open(file_path, 'r') as f:
-        lines = [line for line in f if not line.startswith('##')]
+def read_vcf(file_path, all_lines=None):
+    """Parse a VCF into a DataFrame, optionally reusing already-read lines."""
+    if all_lines is None:
+        with open(file_path, 'r') as f:
+            all_lines = f.readlines()
+    lines = [line for line in all_lines if not line.startswith('##')]
     header = lines[0].strip().lstrip('#').split('\t')
     df = pd.read_csv(StringIO(''.join(lines[1:])), sep='\t', names=header)
     return df
 
 def is_missing(geno):
     return geno.startswith('./.') or geno.startswith('.|.')
+
+def _missing_mask(df):
+    """Boolean DataFrame, True where a genotype cell is missing."""
+    return df.apply(lambda c: c.astype(str).str.startswith(('./.', '.|.')))
 
 def extract_genotype_only(geno):
     return geno.split(':')[0] if ':' in geno else geno
@@ -40,7 +47,7 @@ def most_common_phased_het(genotypes):
         return most_common[0][0]
     return '0|1'
 
-def decode_genotypes(imputed, original, ref_df, method, detailed_log_path, confidence_threshold):
+def decode_genotypes(imputed, original, ref_df, method, detailed_log_path):
     inv_map = {0: '0|0', 1: 'HET', 2: '1|1'}
     decoded = original.copy()
     detailed_entries = []
@@ -54,7 +61,7 @@ def decode_genotypes(imputed, original, ref_df, method, detailed_log_path, confi
             if is_missing(orig_val):
                 if not np.isnan(imp_val):
                     snp_id = f"{ref_df.at[idx, 'CHROM']}:{ref_df.at[idx, 'POS']}"
-                    confidence = 1.0  # Currently placeholder (confidence filtering done earlier)
+                    confidence = 1.0  # mode imputation gives no per-genotype score; column kept so the log format doesn't change
                     gt_code = int(round(imp_val))
                     if inv_map[gt_code] == 'HET':
                         new_gt = phased_het
@@ -65,8 +72,6 @@ def decode_genotypes(imputed, original, ref_df, method, detailed_log_path, confi
                     detailed_entries.append(f"{col},{snp_id},{method},{confidence:.2f}")
                 else:
                     decoded.at[idx, col] = './.' + (orig_val[3:] if ':' in orig_val else '')
-            else:
-                decoded.at[idx, col] = orig_val
 
     with open(detailed_log_path, 'w') as log:
         log.write("Sample,SNP,Method,Confidence\n")
@@ -75,90 +80,72 @@ def decode_genotypes(imputed, original, ref_df, method, detailed_log_path, confi
     return decoded
 
 def count_missing_genotypes(df):
-    return sum(is_missing(val) for col in df.columns for val in df[col])
+    return int(_missing_mask(df).sum().sum())
 
-def calculate_mode_confidence(encoded_col):
-    vals = encoded_col[~np.isnan(encoded_col)]
-    if len(vals) == 0:
-        return 0.0
-    m, count = mode(vals, nan_policy='omit')
-    return count[0] / len(vals)
+#def calculate_mode_confidence(encoded_col):
+#    vals = encoded_col[~np.isnan(encoded_col)]
+#    if len(vals) == 0:
+#        return 0.0
+#    m, count = mode(vals, nan_policy='omit')
+#    return count[0] / len(vals)
 
-def calculate_knn_confidence(imputer, encoded_df, col_idx):
-    # This is an approximation: use variance of imputed values as inverse confidence
-    imputed_values = imputer.transform(encoded_df)[:, col_idx]
-    var = np.var(imputed_values)
-    confidence = 1 - min(var, 1)  # Clamp variance max to 1
-    return confidence
-
-def impute_vcf_phased(input_vcf, output_vcf, log_file, detailed_log, knn=True, confidence_threshold=0.8):
+def impute_vcf_phased(input_vcf, output_vcf, log_file, detailed_log):
+    # read the file once, the same lines feed the header scan and read_vcf
     with open(input_vcf, 'r') as f:
         all_lines = f.readlines()
 
     header_lines = [l for l in all_lines if l.startswith('##')]
     column_header_line = next(l for l in all_lines if l.startswith('#CHROM'))
 
-    df = read_vcf(input_vcf)
+    df = read_vcf(input_vcf, all_lines)
     ref_df = df[['CHROM', 'POS']].copy()
     original_geno = df.iloc[:, 9:].copy()
-    missing_before = count_missing_genotypes(original_geno)
 
     encoded = encode_genotypes(original_geno)
 
-    if knn:
-        imputer = KNNImputer(n_neighbors=5)
-        method = "KNN"
-        imputed_array = imputer.fit_transform(encoded)
-        imputed_df = pd.DataFrame(imputed_array, index=encoded.index, columns=encoded.columns)
+    # A sample with no usable biallelic genotype anywhere encodes to an all-NaN
+    # column. SimpleImputer silently drops those, which leaves the frames a column
+    # short and breaks the reconstruction below, so drop them here instead and keep
+    # every frame and the #CHROM header lined up. Logged as well, so a dead sample
+    # is visible rather than quietly filled in as 0|0.
+    dropped_samples = [c for c in encoded.columns if bool(encoded[c].isna().all())]
+    if dropped_samples:
+        print(f"WARNING: dropping {len(dropped_samples)} sample(s) with no usable "
+              f"biallelic genotypes: {', '.join(map(str, dropped_samples))}")
+        df = df.drop(columns=dropped_samples)
+        original_geno = original_geno.drop(columns=dropped_samples)
+        encoded = encoded.drop(columns=dropped_samples)
 
-        confidences = []
-        for col_idx, col in enumerate(encoded.columns):
-            conf = calculate_knn_confidence(imputer, encoded, col_idx)
-            confidences.append(conf)
+    missing_before = count_missing_genotypes(original_geno)
 
-        # Filter variants by confidence threshold
-        high_conf_variants = [col for col, conf in zip(encoded.columns, confidences) if conf >= confidence_threshold]
-        low_conf_variants = [col for col in encoded.columns if col not in high_conf_variants]
+    method = "Mode"
+    imputer = SimpleImputer(strategy="most_frequent")
+    imputed_array = imputer.fit_transform(encoded)
+    imputed_df = pd.DataFrame(imputed_array, index=encoded.index, columns=encoded.columns)
 
-        imputed_df = imputed_df[high_conf_variants]
-        encoded = encoded[high_conf_variants]
-        original_geno = original_geno[high_conf_variants]
-        ref_df = ref_df.loc[encoded.index]
-
-    else:
-        method = "Mode"
-        imputer = SimpleImputer(strategy="most_frequent")
-        imputed_array = imputer.fit_transform(encoded)
-        imputed_df = pd.DataFrame(imputed_array, index=encoded.index, columns=encoded.columns)
-
-        # For mode imputation, keep all variants (no confidence filtering)
-        high_conf_variants = list(encoded.columns)
-        low_conf_variants = []
-
-    decoded_df = decode_genotypes(imputed_df, original_geno, ref_df, method, detailed_log, confidence_threshold)
+    decoded_df = decode_genotypes(imputed_df, original_geno, ref_df, method, detailed_log)
 
     df.iloc[:, 9:] = decoded_df
 
     missing_after = count_missing_genotypes(decoded_df)
     snps_before = df.shape[0]
-    df_clean = df[~df.iloc[:, 9:].applymap(is_missing).any(axis=1)]
-    snps_removed = snps_before - df_clean.shape[0] + len(low_conf_variants)
+    df_clean = df[~_missing_mask(df.iloc[:, 9:]).any(axis=1)]
+    snps_removed = snps_before - df_clean.shape[0]
 
     with open(log_file, 'w') as log:
+        if dropped_samples:
+            log.write(f"Samples dropped (no usable biallelic genotypes): {len(dropped_samples)}\n")
+            log.write(f"Dropped sample names: {', '.join(map(str, dropped_samples))}\n")
         log.write(f"Missing genotypes before imputation: {missing_before}\n")
         log.write(f"Missing genotypes after imputation: {missing_after}\n")
         log.write(f"SNPs removed due to remaining missing data: {snps_removed}\n")
-        if knn:
-            log.write(f"SNPs removed due to low confidence (<{confidence_threshold}): {len(low_conf_variants)}\n")
-        else:
-            log.write("No confidence filtering applied for mode imputation.\n")
-        log.write(f"Confidence threshold used: {confidence_threshold}\n")
-        log.write(f"KNN used: {knn}\n")
 
     with open(output_vcf, 'w') as out_f:
         for line in header_lines:
             out_f.write(line)
-        out_f.write(column_header_line)
+        # rebuild #CHROM from the current columns so the header width always matches
+        # the body. same as the input line unless samples were dropped.
+        out_f.write('#' + '\t'.join(map(str, df_clean.columns)) + '\n')
         df_clean.to_csv(out_f, sep='\t', index=False, header=False)
 
 def main():
@@ -167,11 +154,9 @@ def main():
     parser.add_argument("-o", "--output", required=True, help="Output VCF file")
     parser.add_argument("-l", "--log", required=True, help="Summary log file")
     parser.add_argument("-d", "--detailed-log", required=True, help="Detailed per-genotype log")
-    parser.add_argument("--knn", action="store_true", help="Use KNN imputation (default is mode imputation)")
-    parser.add_argument("-c", "--confidence-threshold", type=float, default=0.8, help="Confidence threshold for filtering KNN-imputed variants")
     args = parser.parse_args()
 
-    impute_vcf_phased(args.input, args.output, args.log, args.detailed_log, args.knn, args.confidence_threshold)
+    impute_vcf_phased(args.input, args.output, args.log, args.detailed_log)
 
 if __name__ == "__main__":
     main()

@@ -32,20 +32,24 @@ def compute_block_statistics(df):
     
     # Calculate heterozygosity: proportion of rows where Microhaplotype_1 != Microhaplotype_2
     df['heterozygous'] = df['Microhaplotype_1'] != df['Microhaplotype_2']
-    het = df.groupby(['Gene', 'Haplotype_Block'])['heterozygous'].mean().reset_index()
+
+    # shared grouping for the three block-level stats below
+    g = df.groupby(['Gene', 'Haplotype_Block'])
+
+    het = g['heterozygous'].mean().reset_index()
     het.columns = ['Gene', 'Haplotype_Block', 'Heterozygosity']
-    
+
     # Calculate Effective Allele Number (Ae) and Informativeness (In) per block
     ae_in_list = []
-    for (gene, block), group in df.groupby(['Gene', 'Haplotype_Block']):
+    for (gene, block), group in g:
         hap_counts = group['combined_microhaplotypes'].value_counts(normalize=True)
         Ae = calculate_effective_allele_number(hap_counts.values)
         In = calculate_rosenberg_informativeness(hap_counts.values)
         ae_in_list.append([gene, block, Ae, In])
     ae_in_df = pd.DataFrame(ae_in_list, columns=['Gene', 'Haplotype_Block', 'Effective_Allele_Number', 'Informativeness'])
-    
+
     # Get average block length per block (assuming block length is consistent within each block)
-    block_lengths = df.groupby(['Gene', 'Haplotype_Block'])['Haplotype_Block_Length'].mean().reset_index()
+    block_lengths = g['Haplotype_Block_Length'].mean().reset_index()
     
     # Merge block-level stats
     block_stats = pd.merge(het, ae_in_df, on=['Gene', 'Haplotype_Block'], how='outer')

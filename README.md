@@ -81,22 +81,21 @@ whatshap phase -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36
 ### 0. Variant Imputation (Optional) - impute_missing_phased_snps.py
 This script will:
 - Read a phased VCF file with missing genotypes
-- Fill in missing genotypes using KNN or mode imputation
+- Fill in missing genotypes using mode imputation
 - Keep the phasing information intact
-- Remove low-confidence variants when using KNN imputation
 - Remove variants that still have missing data after imputation
 - Save a new VCF file with imputed genotypes
 - Create logs summarizing the imputation results
 
 Usage:
 ```bash
-python impute_missing_phased_snps.py -i variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.vcf -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.imputed.vcf -l imputation_summary.log -d imputation_detailed.log --knn -c 0.9
+python impute_missing_phased_snps.py -i variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.vcf -o variants.markedDups.noMNP.noComplex.noPriors.0.8Missing.minQ36.minDP6.phased.imputed.vcf -l imputation_summary.log -d imputation_detailed.log
 ```
 
 Output:
 - Imputed phased VCF file
 - Summary log with missing data and filtering info
-- Detailed log of each imputed genotype with confidence scores
+- Detailed log of each imputed genotype
 
 ### 1. Determine Phase Blocks - determine_phase_blocks.py
 This script will:

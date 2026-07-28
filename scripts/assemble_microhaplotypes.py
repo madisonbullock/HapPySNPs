@@ -81,13 +81,14 @@ def combine_microhaplotypes_from_csv(input_csv, output_file):
         for gene in haplotypes:
             for sample in haplotypes[gene]:
                 for block in haplotypes[gene][sample]:
-                    hap1 = haplotypes[gene][sample][block]["hap1"]
-                    hap2 = haplotypes[gene][sample][block]["hap2"]
-                    reads1 = haplotypes[gene][sample][block]["reads1"]
-                    depth1 = haplotypes[gene][sample][block]["depth1"]
-                    reads2 = haplotypes[gene][sample][block]["reads2"]
-                    depth2 = haplotypes[gene][sample][block]["depth2"]
-                    variant_positions = haplotypes[gene][sample][block]["variant_positions"]
+                    hap_data = haplotypes[gene][sample][block]
+                    hap1 = hap_data["hap1"]
+                    hap2 = hap_data["hap2"]
+                    reads1 = hap_data["reads1"]
+                    depth1 = hap_data["depth1"]
+                    reads2 = hap_data["reads2"]
+                    depth2 = hap_data["depth2"]
+                    variant_positions = hap_data["variant_positions"]
 
                     microhap_length = (len(hap1) + len(hap2)) / 2 if hap1 and hap2 else 0
 
