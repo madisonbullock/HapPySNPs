@@ -197,8 +197,6 @@ def fetch_alleles(vcf, record, sample): # extract alelles per individual
     genotype_str = "|".join(map(str, gt))
     return alleles[0], alleles[1], genotype_str
 
-# nothing calls this; it's the plain one-position version, kept for reference.
-# the live path is _count_reads_contig, which pileups a whole contig in one go
 def count_reads(samfile, chrom, pos, alleles):
     allele_counts = {alleles[0]: 0, alleles[1]: 0}
     for pileupcolumn in samfile.pileup(chrom, pos - 1, pos, truncate=True):
