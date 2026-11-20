@@ -1,25 +1,43 @@
 #!/bin/bash
-set -eo pipefail
 
-#### Usage: bash variantcall.sh ref.fasta SampleID
-#### Where .fasta is reference sequence + ' ' + samplename 
+## Stop script if an error happens:
+set -euo pipefail
 
-## Set variables
+## General usage:
+### bash variantcall_microhaps.sh reference.fasta sampleID /path/to/fastq 4
+### Where 4 is the number of threads to run on and can be changed to user preferences
+
+## Set variables:
 reference=$1
 prefix=$2
-read1fn="${prefix}_trimmed_R1.fastq.gz"
-read2fn="${prefix}_trimmed_R2.fastq.gz"
+fastq_dir=$3
+threads=${4:-4}
+read1fn="${fastq_dir}/${prefix}_trimmed_R1.fastq.gz" # Change to match naming format of the file
+read2fn="${fastq_dir}/${prefix}_trimmed_R2.fastq.gz" # Change to match naming format of the file
 
-#Align read files to reference sequence and map
-bwa mem $reference $read1fn $read2fn | samtools view -bS -q 20 -F 2048 -F 256 - | samtools sort - -o "$prefix.sorted.bam"
-gatk FastqToSam -F1 $read1fn -F2 $read2fn -O $prefix.unmapped.bam -SM $prefix.sorted.bam
+## Set outputs:
+sorted_bam="${prefix}.sorted.bam"
+rg_bam="${prefix}.sorted-RG.bam"
+final_bam="${prefix}.marked.noDups.bam"
+final_bai="${prefix}.marked.noDups.bai"
+metrics_file="${prefix}.marked_dup_metrics.txt"
 
-#Replace read groups to mapped and unmapped bam files using library prep and sequencing information
-gatk AddOrReplaceReadGroups -I  $prefix.sorted.bam -O $prefix.sorted-RG.bam -RGID $prefix -RGLB lib1 -RGPL illumina -RGPU unit1 -RGSM $prefix
+## Align reads, filter alignments, and sort BAM:
+bwa mem -t "$threads" "$reference" "$read1fn" "$read2fn" |
+samtools view -b -q 20 -F 2304 - |
+samtools sort -@ "$threads" -o "$sorted_bam" -
 
-#Mark duplicate sequences
-gatk MarkDuplicates -I $prefix.sorted-RG.bam -O $prefix.marked.noDups.bam -M $prefix.metrics.txt --REMOVE_DUPLICATES true
-samtools index $prefix.marked.noDups.bam
+## Validate sorted BAM:
+samtools quickcheck "$sorted_bam"
 
-#Remove intermediate files, more intermediate files can be added if prefered
-rm $prefix.unmapped.bam $prefix.unmapped-RG.bam
+## Add read-group information and validate:
+gatk AddOrReplaceReadGroups -I "$sorted_bam" -O "$rg_bam" -RGID "$prefix" -RGLB "$prefix" -RGPL ILLUMINA -RGPU "$prefix" -RGSM "$prefix"
+samtools quickcheck "$rg_bam"
+
+## Remove duplicate reads, validate, and index final BAM:
+gatk MarkDuplicates -I "$rg_bam" -O "$final_bam" -M "$metrics_file" --REMOVE_DUPLICATES true
+samtools quickcheck "$final_bam"
+samtools index -@ "$threads" -o "$final_bai" "$final_bam"
+
+## Remove intermediate files:
+rm -f "$sorted_bam" "$rg_bam"
