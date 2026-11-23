@@ -41,22 +41,23 @@ Then, manually copy the missing supercontig sequences from the additional indivi
 Finally, index the pseudo-reference file with:
 ```bash
 bwa index pseudo_reference.fasta
-samtools index pseudo_reference.fasta
+samtools faidx pseudo_reference.fasta
 ```
 
-### Variant Calling
-Next, this protocol utilizes a BAM file generation script adapted from the [HybSep-SNP-Extraction](https://github.com/lindsawi/HybSeq-SNP-Extraction) script `variantcall.sh`. The adapted script is called `BAM_generation.sh`. This script will map paired-end reads to supercontigs, replace read groups for mapped BAM files, mark duplicate reads, and remove intermediate BAM files.
-- Usage for single samples: `bash BAM_generation.sh pseudo_reference.fasta SampleID`
+### Variant Calling & Phased VCF Generation
+Next, this protocol utilizes a BAM file generation script adapted from the [HybSep-SNP-Extraction](https://github.com/lindsawi/HybSeq-SNP-Extraction) script `variantcall.sh`. The adapted script, `BAM_generation.sh`, maps paired-end reads to the reference or pseudo-reference supercontigs, adds or replaces read group information for mapped BAM files, identifies and removes duplicate reads, indexes the final BAM files, and removes any intermediate BAM files.
+- Note: FastQ file name formats are written into the script as sampleID_trimmed_R1.fastq.gz or sampleID_trimmed_R2.fastq.gz. Please either change your file names to match this format, or change the script to match your file name formats before running.
+- Usage for single samples: `bash BAM_generation.sh reference.fasta sampleID /path/to/fastq 4`
 - Usage for multiple samples: 
 ```bash
 while read sample
 do
-bash BAM_generation.sh pseudo_reference.fasta $sample
+bash BAM_generation.sh pseudo_reference.fasta $sample /path/to/fastq/ 4
 done < samples.txt
 ```
-To efficiently generate a variant file, run FreeBayes in parallel to call simple SNPs and indels from a list of BAM file paths (`bam_list.txt`) against the taxon-specific pseudo-reference file. This process splits the genome into 250 bp chunks, ignores complex variants and priors, saves results to a VCF file, and logs any errors:
+To generate the multi-sample VCF file, run FreeBayes in parallel to call SNPs from a list of BAM file paths (`bam_list.txt`) against the reference or pseudo-reference file. This process splits the reference into regions of 250bp, excludes indel and MNP observations, disables selected population, Hardy-Weinberg, binomial observation, and allele-balance priors, sets the haplotype length to zero, saves results to a VCF file, and logs any errors:
 ```bash
-nohup freebayes-parallel <(fasta_generate_regions.py pseudo_reference.fasta.fai 250) 10 -f pseudo_reference.fasta -L bam_list.txt --haplotype-length 0 -kwVaXi > variants.markedDups.noMNP.noComplex.noPriors.vcf 2> freebayes_errors.log
+nohup freebayes-parallel <(fasta_generate_regions.py pseudo_reference.fasta.fai 250) 10 -f pseudo_reference.fasta -L bam_list.txt --haplotype-length 0 -kwVaXi > variants.noDups.noMNP.noComplex.noPriors.vcf 2> freebayes_errors.log
 ```
 Filter the VCF output from FreeBayes using VCFtools:
 ```bash
