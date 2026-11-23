@@ -57,7 +57,7 @@ done < samples.txt
 ```
 To generate the multi-sample VCF file, run FreeBayes in parallel to call SNPs from a list of BAM file paths (`bam_list.txt`) against the reference or pseudo-reference file. This process splits the reference into regions of 250bp, excludes indel and MNP observations, disables selected population, Hardy-Weinberg, binomial observation, and allele-balance priors, sets the haplotype length to zero, saves results to a VCF file, and logs any errors:
 ```bash
-nohup freebayes-parallel <(fasta_generate_regions.py pseudo_reference.fasta.fai 250) 10 -f pseudo_reference.fasta -L bam_list.txt --haplotype-length 0 -kwVaXi > variants.noDups.noMNP.noComplex.noPriors.vcf 2> freebayes_errors.log
+nohup freebayes-parallel <(fasta_generate_regions.py pseudo_reference.fasta.fai 250) 10 -f pseudo_reference.fasta -L bam_list.txt --haplotype-length 0 -kwVa -X -u -i > variants.noDups.noMNP.noComplex.noPriors.vcf 2> freebayes_errors.log
 ```
 Filter the VCF output from FreeBayes using VCFtools:
 ```bash
